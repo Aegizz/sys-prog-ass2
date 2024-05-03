@@ -1,0 +1,106 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
+
+#define MAX_COMMANDS 10
+#define MAX_CMD_LENGTH 100
+
+void execute_pipeline(char *cmds[], int num_cmds) {
+    int prev_pipe[2], new_pipe[2];
+
+    // Initialize the first pipe
+    pipe(prev_pipe);
+
+    for (int i = 0; i < num_cmds; i++) {
+        // Create a new pipe for all commands except the last one
+        if (i < num_cmds - 1) {
+            pipe(new_pipe);
+        }
+
+        pid_t pid = fork();
+        if (pid < 0) {
+            perror("fork failed");
+            exit(1);
+        } else if (pid == 0) {
+            // Child process
+            if (i > 0) {
+                // Redirect input to read from the previous pipe
+                dup2(prev_pipe[0], STDIN_FILENO);
+                close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+            if (i < num_cmds - 1) {
+                // Redirect output to write to the new pipe
+                dup2(new_pipe[1], STDOUT_FILENO);
+                close(new_pipe[0]);
+                close(new_pipe[1]);
+            }
+
+            // Execute the command
+            char *token = strtok(cmds[i], " \n");
+            char *params[MAX_CMD_LENGTH];
+            int j = 0;
+            while (token != NULL) {
+                params[j++] = token;
+                token = strtok(NULL, " \n");
+            }
+            params[j] = NULL;
+
+            execvp(params[0], params);
+            perror("execvp failed");
+            exit(1);
+        } else {
+            // Parent process
+            if (i > 0) {
+                // Close the previous pipe
+                close(prev_pipe[0]);
+                close(prev_pipe[1]);
+            }
+
+            if (i < num_cmds - 1) {
+                // Set the new pipe as the previous pipe for the next iteration
+                prev_pipe[0] = new_pipe[0];
+                prev_pipe[1] = new_pipe[1];
+            }
+        }
+    }
+
+    // Wait for all child processes to finish
+    for (int i = 0; i < num_cmds; i++) {
+        wait(NULL);
+    }
+}
+
+int main(void) {
+    char ** cmds = NULL;
+    char buffer[1024];
+    int num_cmds = 0;
+    size_t cmds_size = 0;
+
+
+    while (fgets(buffer, sizeof(buffer), stdin) != NULL) {
+        cmds_size +=sizeof(char *);
+        cmds = realloc(cmds, cmds_size);
+        if (cmds == NULL){
+            perror("realloc failed");
+            exit(1);
+        }
+        cmds[num_cmds] = strdup(buffer);
+        if (cmds[num_cmds] == NULL){
+            perror("strdup failed");
+            exit(1);
+        }
+        num_cmds++;
+    }
+
+    execute_pipeline(cmds, num_cmds);
+
+    // Free memory
+    free(cmds);
+
+    return 0;
+}

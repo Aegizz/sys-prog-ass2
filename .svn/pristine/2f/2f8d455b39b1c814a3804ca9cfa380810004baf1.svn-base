@@ -1,0 +1,10 @@
+all: sequence pipeline
+
+sequence:
+	gcc -o sequence sequence.c -Wall
+
+pipeline:
+	gcc -o pipeline pipeline.c -Wall
+
+clean:
+	rm -f sequence pipeline

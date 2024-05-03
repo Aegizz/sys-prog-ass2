@@ -1,0 +1,105 @@
+#include <stdio.h>
+#include <stdlib.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <string.h>
+
+#define MAX_CMDS 1000
+#define MAX_CMD_LEN 1024
+
+void execute_pipeline(char *cmds[], int num_cmds) {
+    int pipes[num_cmds - 1][2];
+    for (int i = 0; i < num_cmds - 1; i++) {
+        if (pipe(pipes[i]) == -1) {
+            perror("pipe");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    for (int i = 0; i < num_cmds; i++) {
+        pid_t pid = fork();
+        if (pid == 0) {
+            // Child process
+            if (i != 0) {
+                if (dup2(pipes[i - 1][0], STDIN_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+            if (i != num_cmds - 1) {
+                if (dup2(pipes[i][1], STDOUT_FILENO) == -1) {
+                    perror("dup2");
+                    exit(EXIT_FAILURE);
+                }
+            }
+
+            for (int j = 0; j < num_cmds - 1; j++) {
+                close(pipes[j][0]);
+                close(pipes[j][1]);
+            }
+
+            char *args[MAX_CMD_LEN];
+            char *token = strtok(cmds[i], " ");
+            int arg_idx = 0;
+            while (token != NULL) {
+                args[arg_idx++] = token;
+                token = strtok(NULL, " ");
+            }
+            args[arg_idx] = NULL;
+
+            execvp(args[0], args);
+            perror("execvp");
+            exit(EXIT_FAILURE);
+        } else if (pid < 0) {
+            perror("fork");
+            exit(EXIT_FAILURE);
+        }
+    }
+
+    for (int i = 0; i < num_cmds - 1; i++) {
+        close(pipes[i][0]);
+        close(pipes[i][1]);
+    }
+
+    // Read and print the output of the last command in the pipeline
+    char buf[MAX_CMD_LEN];
+    ssize_t nbytes;
+    while ((nbytes = read(pipes[num_cmds - 2][0], buf, sizeof(buf))) > 0) {
+        write(STDOUT_FILENO, buf, nbytes);
+    }
+
+    for (int i = 0; i < num_cmds; i++) {
+        wait(NULL);
+    }
+}
+
+int main(void) {
+    char *cmds[MAX_CMDS];
+    int num_cmds = 0;
+
+    char *line = NULL;
+    size_t len = 0;
+    ssize_t read;
+
+    while ((read = getline(&line, &len, stdin)) != -1) {
+        line[strcspn(line, "\n")] = '\0'; // Remove trailing newline
+        cmds[num_cmds++] = strdup(line);  // Store a copy of the command
+        if (num_cmds >= MAX_CMDS) {
+            fprintf(stderr, "Max number of commands reached\n");
+            break;
+        }
+    }
+    free(line); // Free memory allocated by getline
+
+    if (num_cmds > 0) {
+        execute_pipeline(cmds, num_cmds);
+    }
+
+    // Free memory
+    for (int i = 0; i < num_cmds; i++) {
+        free(cmds[i]);
+    }
+
+    return 0;
+}

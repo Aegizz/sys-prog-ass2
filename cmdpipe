@@ -1,0 +1,4 @@
+cal
+cat pipeline.c
+grep .
+wc -l

@@ -1,0 +1,8 @@
+sequence:
+	gcc -o sequence sequence.c
+
+pipeline:
+	gcc -o pipeline pipeline.c
+
+clean:
+	rm -f sequence pipeline

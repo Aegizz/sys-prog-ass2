@@ -1,0 +1,52 @@
+#include <stdlib.h>
+#include <string.h>
+#include <stdio.h>
+#include <unistd.h>
+#include <sys/types.h>
+#include <sys/wait.h>
+
+int execute_command(char *command) {
+    pid_t pid = fork();
+    if (pid < 0) {
+        perror("fork failed");
+        exit(-1);
+    } else if (pid == 0) {
+        char *token = strtok(command, " \n");
+        char *params[sizeof(command)];
+        int i = 0;
+        while (token != NULL) {
+            params[i++] = token;
+            token = strtok(NULL, " \n");
+        }
+        params[i] = NULL;
+
+        if (execvp(params[0], params) == -1){
+            perror("execvp failed");
+            exit(-1);
+        }
+        exit(1);
+    } else {
+        int status;
+        if (waitpid(pid, &status, 0) == -1) {
+            perror("waitpid failed");
+            exit(-1);
+        }
+    }
+    return 0;
+}
+
+int main(void){
+
+    FILE *file = stdin;
+    char *commands = NULL;
+    size_t len = 0;
+    ssize_t read;
+    while ((read = getline(&commands, &len, file)) != -1){
+        commands[strcspn(commands, "\n")] = 0;
+        execute_command(commands);
+    }
+    free(commands);
+    fclose(file);
+
+    return 0;
+}
